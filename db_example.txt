@@ -1,0 +1,48 @@
+```
+{
+    "company1": {
+        "admins"[]: {
+            _id:      id
+            name:     string
+            email:    string
+            password: string
+        }
+        "users"[]: {
+            _id:      id
+            name:     string
+            email:    string
+            password: string
+            assigned_to[]: {
+                task_id: id
+            }
+        }
+        "projects"[]: {
+            _id:  id
+            name: string
+            desc: string
+            due_date: date
+            assigned_to[]: {
+                user_id: id
+            }
+            "tasks"[]: {
+              _id: id
+              name:     string
+              desc:     string
+              due_date: date
+              assigned_to[]: {
+                  user_id: id
+              }
+              comments[]: {
+                  user_id: id
+                  text:    string
+              }
+          }
+        }
+        
+    }
+
+    "company2": {
+        same thing
+    }
+}
+```
