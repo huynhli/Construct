@@ -1,9 +1,19 @@
 package routes
 
-import "github.com/gofiber/fiber/v2"
+import (
+	"backend/handlers"
+
+	"github.com/gofiber/fiber/v2"
+)
 
 func SetupRoutes(app *fiber.App) {
-	app.Get("/", homePage)
+	api := app.Group("/api")
+	ver := api.Group("/v1")
+
+	ver.Get("/", homePage)
+
+	ver.Get("/tasks", handlers.GetTasks)
+	ver.Get("/projects", handlers.GetProjects)
 }
 
 func homePage(c *fiber.Ctx) error {
