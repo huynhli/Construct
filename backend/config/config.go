@@ -16,9 +16,11 @@ var (
 )
 
 func LoadConfig() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatalf("Error laoding .env")
+	if os.Getenv("DOCKER") != "true" {
+		err := godotenv.Load()
+		if err != nil {
+			log.Println("No .env file found, using environment variables")
+		}
 	}
 
 	// Set vars using os.Getenv("KEY")
