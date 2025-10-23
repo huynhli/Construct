@@ -11,7 +11,7 @@ import (
 )
 
 var Client *mongo.Client
-var Database *mongo.Database
+var ConstructDatabase *mongo.Database
 
 func ConnectMongoDB() {
 	if config.DB_USERNAME == "" || config.DB_PASSWORD == "" {
@@ -28,7 +28,7 @@ func ConnectMongoDB() {
 	if err != nil {
 		log.Fatalf("Error connecting to MongoDB: %s", err)
 	}
-	Database = Client.Database("ConstructDB")
+	ConstructDatabase = Client.Database("Prototype")
 }
 
 func DisconnectMongoDB() {

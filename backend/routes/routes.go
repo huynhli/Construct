@@ -12,8 +12,8 @@ func SetupRoutes(app *fiber.App) {
 
 	ver.Get("/", homePage)
 
-	ver.Get("/tasks", handlers.GetTasks)
-	ver.Get("/projects", handlers.GetProjects)
+	ver.Get("/tasks", handlers.UserGetTasks)
+	ver.Get("/projects", handlers.UserGetProjects)
 }
 
 func homePage(c *fiber.Ctx) error {
