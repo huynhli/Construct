@@ -18,6 +18,10 @@ func SetupRoutes(app *fiber.App) {
 	ver.Post("/login", handlers.Login)
 	ver.Get("/tasks", JWTMiddleware(), handlers.UserGetTasks)
 	ver.Get("/projects", JWTMiddleware(), handlers.UserGetProjects)
+	ver.Delete("/projects", JWTMiddleware(), handlers.AdminDeleteProject)
+	ver.Post("/projects", JWTMiddleware(), handlers.AdminAddOrEditProject)
+	ver.Delete("/tasks", JWTMiddleware(), handlers.DeleteTask)
+	ver.Post("/tasks", JWTMiddleware(), handlers.AdminAddOrEditTask)
 }
 
 func homePage(c *fiber.Ctx) error {

@@ -410,6 +410,22 @@ func UserGetTasks(c *fiber.Ctx) error {
 	}
 }
 
+func AdminAddOrEditProject(c *fiber.Ctx) error {
+	return c.SendString("meow")
+}
+
+func AdminDeleteProject(c *fiber.Ctx) error {
+	return c.SendString("meow")
+}
+
+func AdminAddOrEditTask(c *fiber.Ctx) error {
+	return c.SendString("meow")
+}
+
+func DeleteTask(c *fiber.Ctx) error {
+	return c.SendString("meow")
+}
+
 func usernameValidityChecker(username string) error {
 	if username == "" {
 		return errors.New("username cannot be empty")
