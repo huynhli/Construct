@@ -17,8 +17,8 @@ func init() {
 func main() {
 	fmt.Println("Hello, Go project!")
 
-	database.ConnectMongoDB()
-	defer database.DisconnectMongoDB()
+	database.ConnectPostgres()
+	defer database.DisconnectPostgres()
 
 	if config.Port == "" {
 		config.Port = "8080"
