@@ -51,10 +51,16 @@ func JWTMiddleware() fiber.Handler {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid claims"})
 		}
 
+		isAdmin, ok := claims["isAdmin"].(string)
+		if !ok {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid claims"})
+		}
+
 		userID := int(claims["id"].(float64)) // note JSON numbers are float64
 
 		c.Locals("username", username)
 		c.Locals("userID", userID)
+		c.Locals("isAdmin", isAdmin)
 
 		return c.Next()
 	}

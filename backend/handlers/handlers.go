@@ -4,6 +4,7 @@ import (
 	"backend/database"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -16,8 +17,9 @@ import (
 )
 
 type SignupLoginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username  string `json:"username"`
+	Password  string `json:"password"`
+	CompanyID int    `json:"company_id"`
 }
 
 // signup, takes in POST req
@@ -66,16 +68,14 @@ func Signup(c *fiber.Ctx) error {
 		}
 
 		// make user in table
-		_, err := database.DB.ExecContext(ctx, "INSERT INTO users (username, password_hash) VALUES ($1, $2)", signInReq.Username, string(hashedBytePW))
+		_, err := database.DB.ExecContext(ctx, "INSERT INTO users (company_id, username, password_hash) VALUES ($1, $2, $3)", signInReq.CompanyID, signInReq.Username, string(hashedBytePW))
 		if err != nil {
 			return &fiber.Error{
 				Code:    fiber.ErrBadGateway.Code,
 				Message: err.Error(),
 			}
 		}
-		return c.JSON(fiber.Map{
-			"Code": 201,
-		})
+		return c.Status(fiber.StatusCreated).JSON(fiber.Map{"message": "user created"})
 
 	} else if err != nil {
 		// other errors --> error querying
@@ -88,69 +88,7 @@ func Signup(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusConflict).JSON(fiber.Map{
 		"message": "username already exists",
 	})
-
-	// ensure table has only one row --> enforced by schema anyways
-
-	// defer rows.Close() 9=gh
-	// for rows.Next() {
-	// 	var id int
-	// 	var name string
-	// 	err := rows.Scan(&id, &name)
-	// 	if err != nil {
-	// 		log.Fatal(err)
-	// 	}
-	// 	log.Println(id, name)
-	// }
-
-	// var res bson.M
-	// err = database.ConstructDatabase.Collection("users").FindOne(context.TODO(), bson.M{"name": username}).Decode(&res)
-	// if err == mongo.ErrNoDocuments {
-	// 	// user does not exist --> add to db
-	// 	// company is guaranteed to exist bc of dropdown
-	// 	insertUserIntoDB(username, c.Query("company"))
-	// }
-	//  // user exists --> return msg user already exists
 }
-
-// // returns names of all companies in db
-// func getAllCompanies() []string {
-// 	var res bson.M
-// 	cursor, err := database.ConstructDatabase.Collection("companies").Find(context.TODO(), bson.M{}, options.Find().SetProjection(bson.M{"name": 1, "_id": 0})).Decode(&res)
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-// 	defer cursor.Close(context.TODO())
-
-// 	var companyNames []string
-// 	for cursor.Next(context.TODO()) {
-// 		var result bson.M
-// 		if err := cursor.Decode(&result); err != nil {
-// 			log.Fatal(err)
-// 		}
-// 		companyNames = append(companyNames, result["name"].(string))
-// 	}
-// 	return companyNames
-// }
-//
-// func getCompanyIDWithCompanyName(companyName string) error {
-// 	var res bson.M
-// 	err := database.ConstructDatabase.Collection("companies").FindOne(context.TODO(), bson.M{"name": companyName}).Decode(&res)
-// 	if err == mongo.ErrNoDocuments {
-// 		// company does not exist
-// 	}
-// 	return nil
-// }
-//
-// func insertCompanyIntoDB(companyName string) error {
-// 	companyObj, err := database.ConstructDatabase.Collection("companies").
-// 		InsertOne(context.TODO(), bson.M{
-// 			"name": companyName,
-// 		})
-// 	if err != nil {
-// 		return err
-// 	}
-// 	return nil
-// }
 
 // submitted login data
 func Login(c *fiber.Ctx) error {
@@ -161,7 +99,6 @@ func Login(c *fiber.Ctx) error {
 			Code:    fiber.ErrBadRequest.Code,
 			Message: "Invalid request body",
 		}
-
 	}
 
 	err = usernameValidityChecker(loginReq.Username)
@@ -247,64 +184,14 @@ type Project struct {
 }
 
 // for a given admin, show projects they are related to
-func AdminGetProjects(c *fiber.Ctx) error {
-	userID := c.Locals("userID")
-	if userID == nil {
-		return fiber.NewError(fiber.StatusUnauthorized, "userID missing")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	rows, err := database.DB.QueryContext(ctx,
-		`
-		SELECT DISTINCT p.*
-		FROM projects p
-		JOIN project_assignees pa ON p.id = pa.project_id
-		JOIN users u ON pa.user_id = u.id
-		WHERE u.id = $1 AND u.is_admin = TRUE AND p.company_id = u.company_id
-		`, userID,
-	)
-	if err != nil {
-		return &fiber.Error{
-			Message: "error when getting projects for admin",
-		}
-	}
-	defer rows.Close()
-
-	projects := make([]Project, 0)
-	for rows.Next() {
-		var project Project
-		err := rows.Scan(
-			&project.ID,
-			&project.CompanyID,
-			&project.Name,
-			&project.Description,
-			&project.DueDate,
-			&project.CreatedAt,
-			&project.UpdatedAt,
-		)
-		if err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, "error scanning project row")
-		}
-		projects = append(projects, project)
-	}
-	err = rows.Err()
-	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "error scanning project rows")
-	}
-
-	return c.JSON(projects)
-}
-
-// for a given user, show projects they are related to
-// using local.userID, get project IDs from project assignees table
 func UserGetProjects(c *fiber.Ctx) error {
 	userID := c.Locals("userID")
 	if userID == nil {
 		return fiber.NewError(fiber.StatusUnauthorized, "userID missing")
 	}
 
+	// for a given user/admin, show projects they are related to
+	// using local.userID, get project IDs from project assignees table
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -346,11 +233,12 @@ func UserGetProjects(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "error scanning project rows")
 	}
 	return c.JSON(projects)
+
 }
 
 type Task struct {
 	ID          int        `json:"id" db:"id"`
-	CreatorID   int        `json:"company_id" db:"company_id"`
+	CreatorID   int        `json:"creator_id" db:"creator_id"`
 	ProjectID   int        `json:"project_id" db:"project_id"`
 	Title       string     `json:"title" db:"title"`
 	Description *string    `json:"description,omitempty" db:"description"`
@@ -358,32 +246,168 @@ type Task struct {
 	DueDate     *time.Time `json:"due_date,omitempty" db:"due_date"`
 	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
+	Assignees   []User     `json:"assignees" db:"assignees"`
 }
 
-// for a given admin, show tasks they can use
-func AdminGetTasks(c *fiber.Ctx) error {
-	userID := c.Locals("userID")
-	if userID == nil {
-		return fiber.NewError(fiber.StatusUnauthorized, "userID missing")
-	}
-
-	return c.SendString("")
+type User struct {
+	ID       int    `json:"id" db:"id"`
+	Username string `json:"username" db:"username"`
 }
 
-// for a given user, show tasks they are assigned
 func UserGetTasks(c *fiber.Ctx) error {
 	userID := c.Locals("userID")
 	if userID == nil {
 		return fiber.NewError(fiber.StatusUnauthorized, "userID missing")
 	}
-	// var tasks Tasks
-	// ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	// defer cancel()
-	// err := database.DB.QueryContext(ctx, `SELECT FROM Tasks WHERE`).Scan(&tasks)
-	// if err != nil {
+	isAdmin := c.Locals("isAdmin")
+	if isAdmin == false {
+		// for user, show tasks they are assigned, and who else has been assigned to the same task
+		projectID := c.Query("projectID")
 
-	// }
-	return c.SendString("Updated!")
+		// want all tasks for this project
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		rows, err := database.DB.QueryContext(ctx,
+			`
+			SELECT 
+				t.id,
+				t.creator_id,
+				t.project_id,
+				t.title,
+				t.description,
+				t.status,
+				t.due_date,
+				t.created_at,
+				t.updated_at,
+				COALESCE(
+					json_agg(
+						DISTINCT jsonb_build_object(
+							'id', u.id,
+							'username', u.username
+						)
+					) FILTER (WHERE u.id IS NOT NULL),
+					'[]'
+				) AS assignees
+			FROM tasks t
+			JOIN task_assignees ta ON t.id = ta.task_id
+			LEFT JOIN users u ON ta.user_id = u.id
+			WHERE ta.user_id = $1 AND t.project_id = $2
+			GROUP BY t.id
+			`, userID, projectID,
+		)
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "query error: "+err.Error())
+		}
+		defer rows.Close()
+
+		var tasks []Task
+		for rows.Next() {
+			var task Task
+			var assigneesJSON []byte
+
+			err := rows.Scan(
+				&task.ID,
+				&task.CreatorID,
+				&task.ProjectID,
+				&task.Title,
+				&task.Description,
+				&task.Status,
+				&task.DueDate,
+				&task.CreatedAt,
+				&task.UpdatedAt,
+				&assigneesJSON,
+			)
+			if err != nil {
+				return fiber.NewError(fiber.StatusInternalServerError, "scan error: "+err.Error())
+			}
+
+			err = json.Unmarshal(assigneesJSON, &task.Assignees)
+			if err != nil {
+				return fiber.NewError(fiber.StatusInternalServerError, "unmarshal error: "+err.Error())
+			}
+			tasks = append(tasks, task)
+		}
+		err = rows.Err()
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+		}
+
+		return c.JSON(tasks)
+	} else {
+		// for a given admin, show all tasks they can use
+		projectID := c.Query("projectID")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		rows, err := database.DB.QueryContext(ctx,
+			`
+			SELECT 
+				t.id,
+				t.creator_id,
+				t.project_id,
+				t.title,
+				t.description,
+				t.status,
+				t.due_date,
+				t.created_at,
+				t.updated_at,
+				COALESCE(
+					json_agg(
+						DISTINCT jsonb_build_object(
+							'id', u.id,
+							'username', u.username
+						)
+					) FILTER (WHERE u.id IS NOT NULL),
+					'[]'
+				) AS assignees
+			FROM tasks t
+			LEFT JOIN task_assignees ta ON t.id = ta.task_id
+			LEFT JOIN users u ON ta.user_id = u.id
+			WHERE t.project_id = $1
+			GROUP BY t.id
+			`, projectID,
+		)
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "query error: "+err.Error())
+		}
+		defer rows.Close()
+
+		var tasks []Task
+		for rows.Next() {
+			var task Task
+			var assigneesJSON []byte
+
+			err := rows.Scan(
+				&task.ID,
+				&task.CreatorID,
+				&task.ProjectID,
+				&task.Title,
+				&task.Description,
+				&task.Status,
+				&task.DueDate,
+				&task.CreatedAt,
+				&task.UpdatedAt,
+				&assigneesJSON,
+			)
+			if err != nil {
+				return fiber.NewError(fiber.StatusInternalServerError, "scan error: "+err.Error())
+			}
+
+			err = json.Unmarshal(assigneesJSON, &task.Assignees)
+			if err != nil {
+				return fiber.NewError(fiber.StatusInternalServerError, "unmarshal error: "+err.Error())
+			}
+			tasks = append(tasks, task)
+		}
+		err = rows.Err()
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+		}
+
+		return c.JSON(tasks)
+	}
 }
 
 func usernameValidityChecker(username string) error {
