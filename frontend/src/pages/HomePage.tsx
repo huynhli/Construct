@@ -1,16 +1,36 @@
-export default function HomePage(){
-	return (
-		<div className={`flex flex-col items-center min-h-screen w-200 mx-auto py-20 bg-zinc-900`}>
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
-			{/* About */}
-			<div className={`w-150 p-3 mx-20 my-8`}>
-				<h1 className={`text-3xl`}>About</h1>
-				<div className={`h-1 my-3`}></div>
-				<p>
-					Founded in 2025 in Toronto, Canada, tbsp games is a team of diverse, 
-					international creatives that have a love and passion for making games that are not too big, and not too small.
-				</p>
-			</div>
-		</div>
-	)
+interface Project {
+	id: number;
+	company_id: number;
+	name: string;
+	description: string | null;
+	due_date: string | null;
+	created_at: string;
+	updated_at: string;
+}
+
+export default function HomePage() {
+
+    return (
+        <div className="min-h-screen bg-zinc-900 text-white">
+            <header className="bg-zinc-800 shadow-md p-4 flex justify-between items-center">
+                <h1 className="text-2xl font-bold">My Projects</h1>
+            </header>
+            
+            <main className="p-8">
+                {/* Project Gallery */}
+                <div className="w-full max-w-4xl mx-auto space-y-8">
+					<div className="bg-zinc-800 rounded-lg shadow-lg overflow-hidden transform hover:-translate-y-2 transition-transform duration-300">
+						<img
+							src={'https://upload.wikimedia.org/wikipedia/commons/1/14/Brr_brr_patapim.jpg'} // Fallback image
+							alt={"Project Name"}
+							className="w-fit h-64 object-cover"
+						/>
+					</div>
+                </div>
+            </main>
+        </div>
+    );
 }
