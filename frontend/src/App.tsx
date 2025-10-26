@@ -2,6 +2,7 @@ import { Routes, Route, Outlet } from 'react-router-dom'
 import HomePage from './pages/HomePage.tsx'
 import Header from './components/Header.tsx'
 import Footer from './components/Footer.tsx'
+import LoginPage from './pages/LoginPage.tsx'
 
 export default function App() {
   // defining default layout
@@ -20,6 +21,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route path="/" element={<HomePage />} />
+          <Route path="/login" element={<LoginPage />} />
         </Route>
       </Routes>
     </div>
