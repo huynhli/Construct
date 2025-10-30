@@ -278,7 +278,6 @@ func UserGetTasks(c *fiber.Ctx) error {
 	defer cancel()
 
 	var rows *sql.Rows
-	var err error
 
 	if isAdmin == false {
 		// Regular user → show only their assigned tasks
