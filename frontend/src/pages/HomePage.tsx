@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Link } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import apiClient from '../api/apiClient';
 
 interface Project {
 	id: number;
@@ -15,28 +15,27 @@ interface Project {
 export default function HomePage() {
 	const [projects, setProjects] = useState<Project[]>([]);
 	const [loading, setLoading] = useState(true);
+	const [error, setError] = useState<string | null>(null);
 	const navigate = useNavigate();
 
 	useEffect(() => {
 		const fetchProjects = async () => {
 		const token = localStorage.getItem('authToken');
+		console.log(token)
 		if (!token) {
 			navigate('/login');
 			return;
 		}
 
-		await fetch("/REPLACE/WITH/ENDPOINT", {
-			headers: {
-				'Authorization': 'Bearer ${token}'
-			}
-		})
-			.then((res) => res.json())
-			.then((json) => setProjects(json))
-			.catch((err) => console.error(err));
+		try {
+            const response = await apiClient.get('projects');
+			setProjects(response);
 
-		setLoading(false);
-			
-		};
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'An unexpected error occurred.');
+        } finally {
+            setLoading(false);
+        }};
 
 		fetchProjects();
 	}, [navigate])
@@ -54,6 +53,7 @@ export default function HomePage() {
         <div className="min-h-screen bg-zinc-900 text-white">
             <header className="bg-zinc-800 shadow-md p-4 flex justify-between items-center">
                 <h1 className="text-2xl font-bold">My Projects</h1>
+				{error && <div className="bg-red-900 text-red-200 p-3 rounded-lg text-center mb-4">{error}</div>}
 				<button
 					onClick={handleLogout}
 					className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline transition duration-300"
@@ -68,7 +68,7 @@ export default function HomePage() {
 					{projects.length > 0 ? (
 
 						projects.map(project => (
-							<Link to={`/projects/${project.id}/tasks`} key={project.id}>
+							<Link to={`/tasks?projectID=${project.id}&projectName=${project.name}`} key={project.id}>
 								<div className="bg-zinc-800 rounded-lg shadow-lg overflow-hidden transform hover:-translate-y-2 transition-transform duration-300">
 									<img
 										src={`https://via.placeholder.com/800x400.png?text=${encodeURIComponent(project.name)}`}
