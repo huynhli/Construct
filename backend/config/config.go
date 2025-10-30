@@ -40,7 +40,7 @@ func SetupCors(app *fiber.App) {
 	corsSetup := cors.New(cors.Config{
 		AllowOrigins: "*",
 		AllowMethods: "GET,POST,PUT,DELETE",
-		AllowHeaders: "Origin, Content-Type, Accept",
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
 	})
 
 	app.Use(corsSetup)
