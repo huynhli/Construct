@@ -85,9 +85,10 @@ func Signup(c *fiber.Ctx) error {
 		}
 	}
 	// row match! --> exist, so return that user already exists
-	return c.Status(fiber.StatusConflict).JSON(fiber.Map{
-		"message": "username already exists",
-	})
+	return &fiber.Error{
+		Code:    fiber.ErrBadGateway.Code,
+		Message: "user already exists",
+	}
 }
 
 // submitted login data
