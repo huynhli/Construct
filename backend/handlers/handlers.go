@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -86,7 +87,7 @@ func Signup(c *fiber.Ctx) error {
 	}
 	// row match! --> exist, so return that user already exists
 	return c.JSON(&fiber.Error{
-		Code:    fiber.ErrBadGateway.Code,
+		Code:    fiber.StatusConflict,
 		Message: "user already exists",
 	})
 }
@@ -244,11 +245,11 @@ type Task struct {
 	Title       string     `json:"title" db:"title"`
 	Description *string    `json:"description,omitempty" db:"description"`
 	Status      string     `json:"status" db:"status"`
-	FinishedBy  *int       `json:"finished_by,omitempty" db:"finished_by"`
+	FinishedBy  *User      `json:"finished_by,omitempty" db:"finished_by"`
 	DueDate     *time.Time `json:"due_date,omitempty" db:"due_date"`
 	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
-	Assignees   []int      `json:"assignees" db:"assignees"`
+	Assignees   []User     `json:"assignees" db:"assignees"`
 }
 
 type User struct {
@@ -263,9 +264,14 @@ func UserGetTasks(c *fiber.Ctx) error {
 	}
 
 	isAdmin := c.Locals("isAdmin")
-	projectID := c.Query("projectID")
-	if projectID == "" {
+	projectIDstr := c.Query("projectID")
+	if projectIDstr == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "missing projectID query param")
+	}
+
+	projectID, err := strconv.Atoi(projectIDstr)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid projectID")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -281,7 +287,7 @@ func UserGetTasks(c *fiber.Ctx) error {
 			SELECT 
 				t.id,
 				t.creator_id,
-				t.finished_by,
+				jsonb_build_object('id', fu.id, 'username', fu.username) AS finished_by,
 				t.project_id,
 				t.title,
 				t.description,
@@ -290,14 +296,16 @@ func UserGetTasks(c *fiber.Ctx) error {
 				t.created_at,
 				t.updated_at,
 				COALESCE(
-					json_agg(DISTINCT u.id) FILTER (WHERE u.id IS NOT NULL),
+					json_agg(DISTINCT jsonb_build_object('id', u.id, 'username', u.username)) 
+					FILTER (WHERE u.id IS NOT NULL),
 					'[]'
 				) AS assignees
 			FROM tasks t
+			LEFT JOIN users fu ON t.finished_by = fu.id
 			JOIN task_assignees ta ON t.id = ta.task_id
 			LEFT JOIN users u ON ta.user_id = u.id
 			WHERE ta.user_id = $1 AND t.project_id = $2
-			GROUP BY t.id
+			GROUP BY t.id, fu.id, fu.username
 			`, userID, projectID)
 	} else {
 		// Admin → show all tasks for project
@@ -306,7 +314,7 @@ func UserGetTasks(c *fiber.Ctx) error {
 			SELECT 
 				t.id,
 				t.creator_id,
-				t.finished_by,
+				jsonb_build_object('id', fu.id, 'username', fu.username) AS finished_by,
 				t.project_id,
 				t.title,
 				t.description,
@@ -315,14 +323,16 @@ func UserGetTasks(c *fiber.Ctx) error {
 				t.created_at,
 				t.updated_at,
 				COALESCE(
-					json_agg(DISTINCT u.id) FILTER (WHERE u.id IS NOT NULL),
+					json_agg(DISTINCT jsonb_build_object('id', u.id, 'username', u.username)) 
+					FILTER (WHERE u.id IS NOT NULL),
 					'[]'
 				) AS assignees
 			FROM tasks t
+			LEFT JOIN users fu ON t.finished_by = fu.id
 			LEFT JOIN task_assignees ta ON t.id = ta.task_id
 			LEFT JOIN users u ON ta.user_id = u.id
 			WHERE t.project_id = $1
-			GROUP BY t.id
+			GROUP BY t.id, fu.id, fu.username
 			`, projectID)
 	}
 
@@ -334,12 +344,13 @@ func UserGetTasks(c *fiber.Ctx) error {
 	var tasks []Task
 	for rows.Next() {
 		var task Task
+		var finishedByJSON []byte
 		var assigneesJSON []byte
 
 		err := rows.Scan(
 			&task.ID,
 			&task.CreatorID,
-			&task.FinishedBy,
+			&finishedByJSON,
 			&task.ProjectID,
 			&task.Title,
 			&task.Description,
@@ -353,9 +364,23 @@ func UserGetTasks(c *fiber.Ctx) error {
 			return fiber.NewError(fiber.StatusInternalServerError, "scan error: "+err.Error())
 		}
 
-		if err := json.Unmarshal(assigneesJSON, &task.Assignees); err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, "unmarshal error: "+err.Error())
+		// Unmarshal finished_by into *User
+		if len(finishedByJSON) > 0 && string(finishedByJSON) != "null" {
+			var finishedBy User
+			if err := json.Unmarshal(finishedByJSON, &finishedBy); err != nil {
+				return fiber.NewError(fiber.StatusInternalServerError, "unmarshal finished_by error: "+err.Error())
+			}
+			task.FinishedBy = &finishedBy
+		} else {
+			task.FinishedBy = nil
 		}
+
+		// Unmarshal assignees into []User
+		var assignees []User
+		if err := json.Unmarshal(assigneesJSON, &assignees); err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "unmarshal assignees error: "+err.Error())
+		}
+		task.Assignees = assignees
 
 		tasks = append(tasks, task)
 	}
@@ -367,12 +392,63 @@ func UserGetTasks(c *fiber.Ctx) error {
 	return c.JSON(tasks)
 }
 
+type ProjectEditRequest struct {
+	ID          *int    `json:"id,omitempty"` // nil if new project
+	Name        string  `json:"name"`
+	Description *string `json:"description,omitempty"`
+	DueDate     *string `json:"due_date,omitempty"` // ISO string
+	CompanyID   int     `json:"company_id"`
+}
+
 func AdminAddOrEditProject(c *fiber.Ctx) error {
 	shouldReturn, err := AdminCheck(c)
 	if shouldReturn {
 		return fiber.NewError(fiber.ErrBadRequest.Code, err.Error())
 	}
-	return c.SendString("meow")
+
+	var req ProjectEditRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var dueDatePtr *time.Time
+	if req.DueDate != nil && *req.DueDate != "" {
+		parsed, err := time.Parse(time.RFC3339, *req.DueDate)
+		if err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, "invalid due_date format")
+		}
+		dueDatePtr = &parsed
+	}
+
+	if req.ID != nil {
+		// Update existing project
+		res, err := database.DB.ExecContext(ctx,
+			`UPDATE projects 
+			SET name = $1, description = $2, due_date = $3, updated_at = NOW() 
+			WHERE id = $4 AND company_id = $5`,
+			req.Name, req.Description, dueDatePtr, *req.ID, req.CompanyID)
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "failed to update project: "+err.Error())
+		}
+		rowsAffected, _ := res.RowsAffected()
+		if rowsAffected == 0 {
+			return fiber.NewError(fiber.StatusNotFound, "project not found or not updated")
+		}
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{"message": "project updated successfully"})
+	} else {
+		// Add new project
+		_, err := database.DB.ExecContext(ctx,
+			`INSERT INTO projects (company_id, name, description, due_date, created_at, updated_at) 
+			VALUES ($1, $2, $3, $4, NOW(), NOW())`,
+			req.CompanyID, req.Name, req.Description, dueDatePtr)
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "failed to create project: "+err.Error())
+		}
+		return c.Status(fiber.StatusCreated).JSON(fiber.Map{"message": "project created successfully"})
+	}
 }
 
 func AdminDeleteProject(c *fiber.Ctx) error {
@@ -380,7 +456,37 @@ func AdminDeleteProject(c *fiber.Ctx) error {
 	if shouldReturn {
 		return fiber.NewError(fiber.ErrBadRequest.Code, err.Error())
 	}
-	return c.SendString("meow")
+
+	projectID := c.Query("projectID")
+	if projectID == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "missing projectID query param")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	res, err := database.DB.ExecContext(ctx,
+		`DELETE FROM projects WHERE id = $1`, projectID)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to delete project: "+err.Error())
+	}
+
+	rowsAffected, _ := res.RowsAffected()
+	if rowsAffected == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "project not found")
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{"message": "project deleted successfully"})
+}
+
+type TaskEditRequest struct {
+	ID          *int    `json:"id,omitempty"` // nil if new task
+	ProjectID   int     `json:"project_id"`
+	Title       string  `json:"title"`
+	Description *string `json:"description,omitempty"`
+	Status      string  `json:"status"`
+	Assignees   []int   `json:"assignees,omitempty"`
+	DueDate     *string `json:"due_date,omitempty"`
 }
 
 func AdminAddOrEditTask(c *fiber.Ctx) error {
@@ -388,7 +494,81 @@ func AdminAddOrEditTask(c *fiber.Ctx) error {
 	if shouldReturn {
 		return fiber.NewError(fiber.ErrBadRequest.Code, err.Error())
 	}
-	return c.SendString("meow")
+
+	var req TaskEditRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var dueDatePtr *time.Time
+	if req.DueDate != nil && *req.DueDate != "" {
+		parsed, err := time.Parse(time.RFC3339, *req.DueDate)
+		if err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, "invalid due_date format")
+		}
+		dueDatePtr = &parsed
+	}
+
+	if req.ID != nil {
+		// Update existing task
+		res, err := database.DB.ExecContext(ctx,
+			`UPDATE tasks 
+			SET title = $1, description = $2, status = $3, due_date = $4, updated_at = NOW() 
+			WHERE id = $5 AND project_id = $6`,
+			req.Title, req.Description, req.Status, dueDatePtr, *req.ID, req.ProjectID)
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "failed to update task: "+err.Error())
+		}
+
+		rowsAffected, _ := res.RowsAffected()
+		if rowsAffected == 0 {
+			return fiber.NewError(fiber.StatusNotFound, "task not found or not updated")
+		}
+
+		// Update assignees
+		if req.Assignees != nil {
+			_, err := database.DB.ExecContext(ctx,
+				`DELETE FROM task_assignees WHERE task_id = $1`, *req.ID)
+			if err != nil {
+				return fiber.NewError(fiber.StatusInternalServerError, "failed to clear assignees: "+err.Error())
+			}
+			for _, uid := range req.Assignees {
+				_, err := database.DB.ExecContext(ctx,
+					`INSERT INTO task_assignees (task_id, user_id) VALUES ($1, $2)`, *req.ID, uid)
+				if err != nil {
+					return fiber.NewError(fiber.StatusInternalServerError, "failed to add assignee: "+err.Error())
+				}
+			}
+		}
+
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{"message": "task updated successfully"})
+	} else {
+		// Add new task
+		var newTaskID int
+		err := database.DB.QueryRowContext(ctx,
+			`
+			INSERT INTO tasks (project_id, title, description, status, due_date, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) RETURNING id
+			`,
+			req.ProjectID, req.Title, req.Description, req.Status, dueDatePtr).Scan(&newTaskID)
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "failed to create task: "+err.Error())
+		}
+
+		// Insert assignees
+		for _, uid := range req.Assignees {
+			_, err := database.DB.ExecContext(ctx,
+				`INSERT INTO task_assignees (task_id, user_id) VALUES ($1, $2)`, newTaskID, uid)
+			if err != nil {
+				return fiber.NewError(fiber.StatusInternalServerError, "failed to add assignee: "+err.Error())
+			}
+		}
+
+		return c.Status(fiber.StatusCreated).JSON(fiber.Map{"message": "task created successfully"})
+	}
 }
 
 func AdminDeleteTask(c *fiber.Ctx) error {
@@ -396,7 +576,31 @@ func AdminDeleteTask(c *fiber.Ctx) error {
 	if shouldReturn {
 		return fiber.NewError(fiber.ErrBadRequest.Code, err.Error())
 	}
-	return c.SendString("meow")
+
+	taskID := c.Query("taskID")
+	if taskID == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "missing taskID query param")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	_, err = database.DB.ExecContext(ctx, `DELETE FROM task_assignees WHERE task_id = $1`, taskID)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to delete task assignees: "+err.Error())
+	}
+
+	res, err := database.DB.ExecContext(ctx, `DELETE FROM tasks WHERE id = $1`, taskID)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to delete task: "+err.Error())
+	}
+
+	rowsAffected, _ := res.RowsAffected()
+	if rowsAffected == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "task not found")
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{"message": "task deleted successfully"})
 }
 
 func AdminCheck(c *fiber.Ctx) (bool, error) {

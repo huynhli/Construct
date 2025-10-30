@@ -38,7 +38,7 @@ func LoadConfig() {
 
 func SetupCors(app *fiber.App) {
 	corsSetup := cors.New(cors.Config{
-		AllowOrigins: "*",
+		AllowOrigins: "*", //TODO change after frontend hosted
 		AllowMethods: "GET,POST,PUT,DELETE",
 		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
 	})
