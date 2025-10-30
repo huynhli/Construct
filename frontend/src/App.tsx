@@ -1,17 +1,15 @@
 import { Routes, Route, Outlet } from 'react-router-dom'
 import HomePage from './pages/HomePage.tsx'
-import Header from './components/Header.tsx'
-import Footer from './components/Footer.tsx'
 import LoginPage from './pages/LoginPage.tsx'
+import SignUpPage from './pages/SignUpPage.tsx'
+import TaskListPage from './pages/TaskListPage.tsx'
 
 export default function App() {
   // defining default layout
   const Layout = () => {
     return (
       <div>
-        <Header/>
         <Outlet/>
-        <Footer/>
       </div>
     )
   }
@@ -22,6 +20,8 @@ export default function App() {
         <Route path="/" element={<Layout />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignUpPage />} />
+          <Route path="/tasks" element={<TaskListPage />} />
         </Route>
       </Routes>
     </div>
