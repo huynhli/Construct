@@ -243,10 +243,11 @@ type Task struct {
 	Title       string     `json:"title" db:"title"`
 	Description *string    `json:"description,omitempty" db:"description"`
 	Status      string     `json:"status" db:"status"`
+	FinishedBy  *int       `json:"finished_by,omitempty" db:"finished_by"`
 	DueDate     *time.Time `json:"due_date,omitempty" db:"due_date"`
 	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
-	Assignees   []User     `json:"assignees" db:"assignees"`
+	Assignees   []int      `json:"assignees" db:"assignees"`
 }
 
 type User struct {
@@ -259,20 +260,27 @@ func UserGetTasks(c *fiber.Ctx) error {
 	if userID == nil {
 		return fiber.NewError(fiber.StatusUnauthorized, "userID missing")
 	}
+
 	isAdmin := c.Locals("isAdmin")
+	projectID := c.Query("projectID")
+	if projectID == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "missing projectID query param")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var rows *sql.Rows
+	var err error
+
 	if isAdmin == false {
-		// for user, show tasks they are assigned, and who else has been assigned to the same task
-		projectID := c.Query("projectID")
-
-		// want all tasks for this project
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		rows, err := database.DB.QueryContext(ctx,
+		// Regular user → show only their assigned tasks
+		rows, err = database.DB.QueryContext(ctx,
 			`
 			SELECT 
 				t.id,
 				t.creator_id,
+				t.finished_by,
 				t.project_id,
 				t.title,
 				t.description,
@@ -281,12 +289,7 @@ func UserGetTasks(c *fiber.Ctx) error {
 				t.created_at,
 				t.updated_at,
 				COALESCE(
-					json_agg(
-						DISTINCT jsonb_build_object(
-							'id', u.id,
-							'username', u.username
-						)
-					) FILTER (WHERE u.id IS NOT NULL),
+					json_agg(DISTINCT u.id) FILTER (WHERE u.id IS NOT NULL),
 					'[]'
 				) AS assignees
 			FROM tasks t
@@ -294,58 +297,15 @@ func UserGetTasks(c *fiber.Ctx) error {
 			LEFT JOIN users u ON ta.user_id = u.id
 			WHERE ta.user_id = $1 AND t.project_id = $2
 			GROUP BY t.id
-			`, userID, projectID,
-		)
-		if err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, "query error: "+err.Error())
-		}
-		defer rows.Close()
-
-		var tasks []Task
-		for rows.Next() {
-			var task Task
-			var assigneesJSON []byte
-
-			err := rows.Scan(
-				&task.ID,
-				&task.CreatorID,
-				&task.ProjectID,
-				&task.Title,
-				&task.Description,
-				&task.Status,
-				&task.DueDate,
-				&task.CreatedAt,
-				&task.UpdatedAt,
-				&assigneesJSON,
-			)
-			if err != nil {
-				return fiber.NewError(fiber.StatusInternalServerError, "scan error: "+err.Error())
-			}
-
-			err = json.Unmarshal(assigneesJSON, &task.Assignees)
-			if err != nil {
-				return fiber.NewError(fiber.StatusInternalServerError, "unmarshal error: "+err.Error())
-			}
-			tasks = append(tasks, task)
-		}
-		err = rows.Err()
-		if err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, err.Error())
-		}
-
-		return c.JSON(tasks)
+			`, userID, projectID)
 	} else {
-		// for a given admin, show all tasks they can use
-		projectID := c.Query("projectID")
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		rows, err := database.DB.QueryContext(ctx,
+		// Admin → show all tasks for project
+		rows, err = database.DB.QueryContext(ctx,
 			`
 			SELECT 
 				t.id,
 				t.creator_id,
+				t.finished_by,
 				t.project_id,
 				t.title,
 				t.description,
@@ -354,12 +314,7 @@ func UserGetTasks(c *fiber.Ctx) error {
 				t.created_at,
 				t.updated_at,
 				COALESCE(
-					json_agg(
-						DISTINCT jsonb_build_object(
-							'id', u.id,
-							'username', u.username
-						)
-					) FILTER (WHERE u.id IS NOT NULL),
+					json_agg(DISTINCT u.id) FILTER (WHERE u.id IS NOT NULL),
 					'[]'
 				) AS assignees
 			FROM tasks t
@@ -367,63 +322,137 @@ func UserGetTasks(c *fiber.Ctx) error {
 			LEFT JOIN users u ON ta.user_id = u.id
 			WHERE t.project_id = $1
 			GROUP BY t.id
-			`, projectID,
+			`, projectID)
+	}
+
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "query error: "+err.Error())
+	}
+	defer rows.Close()
+
+	var tasks []Task
+	for rows.Next() {
+		var task Task
+		var assigneesJSON []byte
+
+		err := rows.Scan(
+			&task.ID,
+			&task.CreatorID,
+			&task.FinishedBy,
+			&task.ProjectID,
+			&task.Title,
+			&task.Description,
+			&task.Status,
+			&task.DueDate,
+			&task.CreatedAt,
+			&task.UpdatedAt,
+			&assigneesJSON,
 		)
 		if err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, "query error: "+err.Error())
-		}
-		defer rows.Close()
-
-		var tasks []Task
-		for rows.Next() {
-			var task Task
-			var assigneesJSON []byte
-
-			err := rows.Scan(
-				&task.ID,
-				&task.CreatorID,
-				&task.ProjectID,
-				&task.Title,
-				&task.Description,
-				&task.Status,
-				&task.DueDate,
-				&task.CreatedAt,
-				&task.UpdatedAt,
-				&assigneesJSON,
-			)
-			if err != nil {
-				return fiber.NewError(fiber.StatusInternalServerError, "scan error: "+err.Error())
-			}
-
-			err = json.Unmarshal(assigneesJSON, &task.Assignees)
-			if err != nil {
-				return fiber.NewError(fiber.StatusInternalServerError, "unmarshal error: "+err.Error())
-			}
-			tasks = append(tasks, task)
-		}
-		err = rows.Err()
-		if err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+			return fiber.NewError(fiber.StatusInternalServerError, "scan error: "+err.Error())
 		}
 
-		return c.JSON(tasks)
+		if err := json.Unmarshal(assigneesJSON, &task.Assignees); err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "unmarshal error: "+err.Error())
+		}
+
+		tasks = append(tasks, task)
 	}
+
+	if err := rows.Err(); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+
+	return c.JSON(tasks)
 }
 
 func AdminAddOrEditProject(c *fiber.Ctx) error {
+	shouldReturn, err := AdminCheck(c)
+	if shouldReturn {
+		return fiber.NewError(fiber.ErrBadRequest.Code, err.Error())
+	}
 	return c.SendString("meow")
 }
 
 func AdminDeleteProject(c *fiber.Ctx) error {
+	shouldReturn, err := AdminCheck(c)
+	if shouldReturn {
+		return fiber.NewError(fiber.ErrBadRequest.Code, err.Error())
+	}
 	return c.SendString("meow")
 }
 
 func AdminAddOrEditTask(c *fiber.Ctx) error {
+	shouldReturn, err := AdminCheck(c)
+	if shouldReturn {
+		return fiber.NewError(fiber.ErrBadRequest.Code, err.Error())
+	}
 	return c.SendString("meow")
 }
 
-func DeleteTask(c *fiber.Ctx) error {
+func AdminDeleteTask(c *fiber.Ctx) error {
+	shouldReturn, err := AdminCheck(c)
+	if shouldReturn {
+		return fiber.NewError(fiber.ErrBadRequest.Code, err.Error())
+	}
 	return c.SendString("meow")
+}
+
+func AdminCheck(c *fiber.Ctx) (bool, error) {
+	userID := c.Locals("userID")
+	if userID == nil {
+		return true, fiber.NewError(fiber.StatusForbidden, "userID missing")
+	}
+	isAdmin := c.Locals("isAdmin")
+	if isAdmin == false {
+		return true, fiber.NewError(fiber.StatusForbidden, "unauthorized user")
+	}
+	return false, nil
+}
+
+type TaskEdit struct {
+	TaskID int
+	Status string
+}
+
+// POST request
+func UserCompleteTask(c *fiber.Ctx) error {
+	userID := c.Locals("userID")
+	if userID == nil {
+		return fiber.NewError(fiber.StatusForbidden, "userID missing")
+	}
+
+	var editTaskReq TaskEdit
+	err := c.BodyParser(&editTaskReq)
+	if err != nil {
+		return &fiber.Error{
+			Code:    fiber.ErrBadRequest.Code,
+			Message: "Invalid request body",
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	res, err := database.DB.ExecContext(ctx,
+		`
+		UPDATE tasks
+		SET status = $1, finished_by = $2
+		WHERE id = $3
+		`, editTaskReq.Status, userID, editTaskReq.TaskID,
+	)
+	if err != nil {
+		return fiber.NewError(fiber.ErrBadGateway.Code, err.Error())
+	}
+
+	rowsAffected, _ := res.RowsAffected()
+	if rowsAffected == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "Task not found or not updated")
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Task updated successfully",
+	})
 }
 
 func usernameValidityChecker(username string) error {

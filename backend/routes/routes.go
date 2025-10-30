@@ -20,7 +20,7 @@ func SetupRoutes(app *fiber.App) {
 	ver.Get("/projects", JWTMiddleware(), handlers.UserGetProjects)
 	ver.Delete("/projects", JWTMiddleware(), handlers.AdminDeleteProject)
 	ver.Post("/projects", JWTMiddleware(), handlers.AdminAddOrEditProject)
-	ver.Delete("/tasks", JWTMiddleware(), handlers.DeleteTask)
+	ver.Delete("/tasks", JWTMiddleware(), handlers.AdminDeleteTask)
 	ver.Post("/tasks", JWTMiddleware(), handlers.AdminAddOrEditTask)
 }
 
