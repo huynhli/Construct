@@ -271,7 +271,7 @@ func UserGetTasks(c *fiber.Ctx) error {
 
 	projectID, err := strconv.Atoi(projectIDstr)
 	if err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "invalid projectID")
+		return fiber.NewError(fiber.StatusBadRequest, "invalid projectID: "+projectIDstr)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
