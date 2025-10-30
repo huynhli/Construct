@@ -43,7 +43,7 @@ func Signup(c *fiber.Ctx) error {
 	}
 
 	// query
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	var resUsername string
 	err = database.DB.QueryRowContext(ctx, "SELECT username FROM users WHERE username = $1", signInReq.Username).Scan(&resUsername)
@@ -117,7 +117,7 @@ func Login(c *fiber.Ctx) error {
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	var resUserID int
 	var isAdmin bool
@@ -192,7 +192,7 @@ func UserGetProjects(c *fiber.Ctx) error {
 
 	// for a given user/admin, show projects they are related to
 	// using local.userID, get project IDs from project assignees table
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	rows, err := database.DB.QueryContext(ctx,
@@ -267,7 +267,7 @@ func UserGetTasks(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "missing projectID query param")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	var rows *sql.Rows
@@ -431,7 +431,7 @@ func UserCompleteTask(c *fiber.Ctx) error {
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	res, err := database.DB.ExecContext(ctx,
