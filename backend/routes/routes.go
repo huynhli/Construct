@@ -37,7 +37,7 @@ func JWTMiddleware() fiber.Handler {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Missing token"})
 		}
 
-		tokenStr := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer"))
+		tokenStr := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 		token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
 			return []byte(os.Getenv("JWT_SECRET")), nil
 		})
@@ -47,16 +47,28 @@ func JWTMiddleware() fiber.Handler {
 
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid claims"})
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid general claims"})
 		}
 
 		username, ok := claims["username"].(string)
 		if !ok {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid claims"})
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid user claims"})
 		}
 
-		isAdmin, ok := claims["isAdmin"].(string)
+		// parse isAdmin safely
+		isAdminVal, ok := claims["isAdmin"]
 		if !ok {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid isadmin claims"})
+		}
+
+		var isAdmin bool
+		switch v := isAdminVal.(type) {
+		case bool:
+			isAdmin = v
+		case float64:
+			// sometimes false = 0.0, true = 1.0
+			isAdmin = v != 0
+		default:
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid claims"})
 		}
 
