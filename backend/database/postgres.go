@@ -4,6 +4,7 @@ import (
 	"backend/config"
 	"context"
 	"database/sql"
+	"fmt"
 	"log"
 	"time"
 
@@ -22,7 +23,15 @@ func ConnectPostgres() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	uri := "postgresql://postgres:" + config.DB_PASSWORD + "@db.iahttzkfroabvsbofbpr.supabase.co:5432/postgres"
+	uri := fmt.Sprintf(
+		"postgresql://%s:%s@%s:%s/%s",
+		config.DB_USERNAME,
+		config.DB_PASSWORD,
+		config.DB_HOST,
+		config.DB_PORT,
+		config.DB_NAME,
+	)
+
 	var err error
 	DB, err = sql.Open("pgx", uri)
 	if err != nil {
