@@ -64,35 +64,40 @@ export default function HomePage() {
             
             <main className="p-8">
                 {/* Project Gallery */}
-                <div className="w-full max-w-4xl mx-auto space-y-8">
+                <div className="w-full max-w-4xl mx-auto">
 					{projects.length > 0 ? (
-
-						projects.map(project => (
-							<Link to={`/tasks?projectID=${project.id}&projectName=${project.name}`} key={project.id}>
-								<div className="bg-zinc-800 rounded-lg shadow-lg overflow-hidden transform hover:-translate-y-2 transition-transform duration-300">
-									<img
-										src={`https://via.placeholder.com/800x400.png?text=${encodeURIComponent(project.name)}`}
-										alt={project.name}
-										className="w-full h-64 object-cover"
-									/>
-									<div className="p-6">
-										<h2 className="text-2xl font-semibold mb-2">{project.name}</h2>
-										<p className="text-zinc-400 mb-4">
-											{project.description || 'No description provided.'}
-										</p>
-										{project.due_date ? (
-											<div className="text-sm text-zinc-500">
-												<strong>Due:</strong> {new Date(project.due_date).toLocaleDateString()}
+						<div className="grid grid-cols-1 gap-6">
+							{projects.map(project => (
+								<Link to={`/tasks?projectID=${project.id}&projectName=${project.name}`} key={project.id}>
+									<div className="bg-zinc-800 rounded-lg shadow-lg overflow-hidden transform hover:-translate-y-1 transition-transform duration-300 h-80 flex flex-col"> {/* Added fixed height and flex column */}
+										<img
+											src={`https://via.placeholder.com/800x400.png?text=${encodeURIComponent(project.name)}`}
+											alt={project.name}
+											className="w-full h-40 object-cover flex-shrink-0"
+										/>
+										<div className="p-4 flex-grow flex flex-col justify-between">
+											<div>
+												<h2 className="text-xl font-semibold mb-2">
+													{project.name}
+												</h2>
+												<p className="text-zinc-400 text-sm line-clamp-2">
+													{project.description || 'No description provided.'}
+												</p>
 											</div>
-										) : (
-											<div className="text-sm text-zinc-500">
-												<strong>Due:</strong> Not specified
-											</div>
-										)}
+											{project.due_date ? (
+												<div className="text-xs text-zinc-500 mt-2">
+													<strong>Due:</strong> {new Date(project.due_date).toLocaleDateString()}
+												</div>
+											) : (
+												<div className="text-xs text-zinc-500 mt-2">
+													<strong>Due:</strong> Not specified
+												</div>
+											)}
+										</div>
 									</div>
-								</div>
-							</Link>
-						))
+								</Link>
+							))}
+						</div>
 					) : (
 						<div className="text-center text-zinc-300">
 							<h2 className="text-2xl">No projects assigned</h2>
