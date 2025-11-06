@@ -1,29 +1,35 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
+import apiClient from '../api/apiClient';
 
-// Re-using the same interfaces
 interface AssignedUser {
     id: number;
-    name: string;
-    avatar_url?: string;
+    username: string;
 }
 
-interface TaskDetails {
+interface Task {
     id: number;
+    project_id: number;
+    creator_id: number;
     title: string;
     description: string | null;
     status: 'todo' | 'in_progress' | 'done';
     due_date: string | null;
     created_at: string;
-    assigned_users: AssignedUser[];
+    updated_at: string;
+    assignees: AssignedUser[];
 }
 
 export default function TaskDetailsPage() {
-    const { projectId, taskId } = useParams<{ projectId: string; taskId: string }>();
-    const [task, setTask] = useState<TaskDetails | null>(null);
+    const navigate = useNavigate();
+    const location = useLocation();
+    const [task, setTask] = useState<Task | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const navigate = useNavigate();
+    const queryParams = new URLSearchParams(location.search);
+    const taskID = queryParams.get("projectID");
+    const projectID = queryParams.get("projectID");
+    const projectName = queryParams.get("projectName");
 
     useEffect(() => {
         const fetchTaskDetails = async () => {
@@ -34,15 +40,7 @@ export default function TaskDetailsPage() {
             }
 
             try {
-                // NOTE: Use your actual API endpoint to fetch a single task's details
-                const response = await fetch(`/api/tasks/${taskId}`, {
-                    headers: { 'Authorization': `Bearer ${token}` },
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to load task details.');
-                }
-                const data: TaskDetails = await response.json();
+                const data = await apiClient.get(`tasks?projectID=${projectID}`);
                 setTask(data);
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'An error occurred.');
@@ -51,8 +49,15 @@ export default function TaskDetailsPage() {
             }
         };
 
-        fetchTaskDetails();
-    }, [taskId, navigate]);
+        if (location.state?.task) {
+            // if yes, use it directly and avoid an API call
+            setTask(location.state.task);
+            setLoading(false);
+        } else {
+            // if not (e.g., page was refreshed), fall back to fetching from the api
+            fetchTaskDetails();
+        }
+    }, [taskID, location.state]);
 
     if (loading) return <div className="text-center text-white p-10">Loading task details...</div>;
     if (error) return <div className="text-center text-red-500 p-10">{error}</div>;
@@ -61,7 +66,7 @@ export default function TaskDetailsPage() {
     return (
         <div className="min-h-screen bg-zinc-900 text-white p-8">
             <header className="mb-8">
-                <Link to={`/projects/${projectId}/tasks`} className="text-blue-400 hover:underline">&larr; Back to Task List</Link>
+                <Link to={`/tasks?projectID=${projectID}&projectName=${projectName}`} className="text-blue-400 hover:underline">&larr; Back to Task List</Link>
             </header>
 
             <main className="max-w-4xl mx-auto bg-zinc-800 p-8 rounded-lg shadow-lg">
@@ -85,12 +90,11 @@ export default function TaskDetailsPage() {
                 
                 <div className="mt-8 border-t border-zinc-700 pt-6">
                     <h2 className="text-2xl font-semibold mb-4">Assigned To</h2>
-                    <div className="flex flex-wrap gap-4">
-                        {task.assigned_users.length > 0 ? (
-                            task.assigned_users.map(user => (
-                                <div key={user.id} className="flex items-center gap-3 bg-zinc-700 p-2 rounded-lg">
-                                    <img src={user.avatar_url || 'https://via.placeholder.com/40'} alt={user.name} className="w-10 h-10 rounded-full" />
-                                    <span className="font-medium">{user.name}</span>
+                    <div className="flex flex-wrap gap-2">
+                        {task.assignees.length > 0 ? (
+                            task.assignees.map(user => (
+                                <div key={user.id} className="bg-zinc-700 text-zinc-200 font-medium px-3 py-1 rounded-full">
+                                    {user.username}
                                 </div>
                             ))
                         ) : (
