@@ -26,8 +26,17 @@ func main() {
 
 	app := fiber.New()
 
+	app.Use(func(c *fiber.Ctx) error {
+		c.Accepts("application/json")
+		return c.Next()
+	})
+
 	config.SetupCors(app)
 	routes.SetupRoutes(app)
+
+	for _, route := range app.GetRoutes() {
+		fmt.Printf("Method: %s, Path: %s\n", route.Method, route.Path)
+	}
 
 	err := app.Listen(":" + config.Port)
 	if err != nil {

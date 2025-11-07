@@ -393,10 +393,10 @@ func UserGetTasks(c *fiber.Ctx) error {
 
 type ProjectEditRequest struct {
 	ID          *int    `json:"id,omitempty"` // nil if new project
-	Name        string  `json:"name"`
+	Name        string  `json:"name"`         // id like to also be nullable but cant rn
 	Description *string `json:"description,omitempty"`
 	DueDate     *string `json:"due_date,omitempty"` // ISO string
-	CompanyID   int     `json:"company_id"`
+	Assignees   []int   `json:"assignees,omitempty"`
 }
 
 func AdminAddOrEditProject(c *fiber.Ctx) error {
@@ -405,9 +405,20 @@ func AdminAddOrEditProject(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.ErrBadRequest.Code, err.Error())
 	}
 
+	// Get admin user ID and company ID from context
+	adminUserID := c.Locals("userID").(int)
+
+	// Get company_id from the authenticated user
+	var companyID int
+	err = database.DB.QueryRow(
+		`SELECT company_id FROM users WHERE id = $1`, adminUserID).Scan(&companyID)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to get user company: "+err.Error())
+	}
+
 	var req ProjectEditRequest
 	if err := c.BodyParser(&req); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("invalid request body: %s", err.Error()))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -426,27 +437,62 @@ func AdminAddOrEditProject(c *fiber.Ctx) error {
 		// Update existing project
 		res, err := database.DB.ExecContext(ctx,
 			`UPDATE projects 
-			SET name = $1, description = $2, due_date = $3, updated_at = NOW() 
-			WHERE id = $4 AND company_id = $5`,
-			req.Name, req.Description, dueDatePtr, *req.ID, req.CompanyID)
+            SET name = $1, description = $2, due_date = $3, updated_at = NOW() 
+            WHERE id = $4 AND company_id = $5`,
+			req.Name, req.Description, dueDatePtr, *req.ID, companyID)
 		if err != nil {
 			return fiber.NewError(fiber.StatusInternalServerError, "failed to update project: "+err.Error())
 		}
+
 		rowsAffected, _ := res.RowsAffected()
 		if rowsAffected == 0 {
-			return fiber.NewError(fiber.StatusNotFound, "project not found or not updated")
+			return fiber.NewError(fiber.StatusNotFound, "project not found")
 		}
+
+		// Update assignees
+		if req.Assignees != nil {
+			// TODO optimize so it doesnt kill everyone then add everyone
+			_, err := database.DB.ExecContext(ctx,
+				`DELETE FROM project_assignees WHERE project_id = $1`, *req.ID)
+			if err != nil {
+				return fiber.NewError(fiber.StatusInternalServerError, "failed to clear assignees: "+err.Error())
+			}
+
+			for _, uid := range req.Assignees {
+				_, err := database.DB.ExecContext(ctx,
+					`INSERT INTO project_assignees (project_id, user_id) VALUES ($1, $2)`, *req.ID, uid)
+				if err != nil {
+					return fiber.NewError(fiber.StatusInternalServerError, "failed to add assignee: "+err.Error())
+				}
+			}
+		}
+
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{"message": "project updated successfully"})
+
 	} else {
 		// Add new project
-		_, err := database.DB.ExecContext(ctx,
+		var newProjectID int
+		err := database.DB.QueryRowContext(ctx,
 			`INSERT INTO projects (company_id, name, description, due_date, created_at, updated_at) 
-			VALUES ($1, $2, $3, $4, NOW(), NOW())`,
-			req.CompanyID, req.Name, req.Description, dueDatePtr)
+            VALUES ($1, $2, $3, $4, NOW(), NOW()) RETURNING id`,
+			companyID, req.Name, req.Description, dueDatePtr).Scan(&newProjectID)
 		if err != nil {
 			return fiber.NewError(fiber.StatusInternalServerError, "failed to create project: "+err.Error())
 		}
-		return c.Status(fiber.StatusCreated).JSON(fiber.Map{"message": "project created successfully"})
+
+		// Insert assignees
+		for _, uid := range req.Assignees {
+			_, err := database.DB.ExecContext(ctx,
+				`INSERT INTO project_assignees (project_id, user_id) VALUES ($1, $2)`, newProjectID, uid)
+			if err != nil {
+				return fiber.NewError(fiber.StatusInternalServerError, "failed to add assignee: "+err.Error())
+			}
+		}
+
+		return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+			"message":    "project created successfully",
+			"project_id": newProjectID,
+		})
 	}
 }
 
@@ -475,7 +521,7 @@ func AdminDeleteProject(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusNotFound, "project not found")
 	}
 
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{"message": "project deleted successfully"})
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{"message": fmt.Sprintf("project %s deleted successfully", projectID)})
 }
 
 type TaskEditRequest struct {
@@ -493,6 +539,8 @@ func AdminAddOrEditTask(c *fiber.Ctx) error {
 	if shouldReturn {
 		return fiber.NewError(fiber.ErrBadRequest.Code, err.Error())
 	}
+
+	adminUserID := c.Locals("userID").(int)
 
 	var req TaskEditRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -513,27 +561,34 @@ func AdminAddOrEditTask(c *fiber.Ctx) error {
 
 	if req.ID != nil {
 		// Update existing task
+		var finishedByPtr *int
+		if req.Status == "done" {
+			finishedByPtr = &adminUserID
+		}
+
 		res, err := database.DB.ExecContext(ctx,
 			`UPDATE tasks 
-			SET title = $1, description = $2, status = $3, due_date = $4, updated_at = NOW() 
-			WHERE id = $5 AND project_id = $6`,
-			req.Title, req.Description, req.Status, dueDatePtr, *req.ID, req.ProjectID)
+            SET title = $1, description = $2, status = $3, due_date = $4, 
+                finished_by = $5, updated_at = NOW() 
+            WHERE id = $6 AND project_id = $7`,
+			req.Title, req.Description, req.Status, dueDatePtr, finishedByPtr, *req.ID, req.ProjectID)
 		if err != nil {
 			return fiber.NewError(fiber.StatusInternalServerError, "failed to update task: "+err.Error())
 		}
 
 		rowsAffected, _ := res.RowsAffected()
 		if rowsAffected == 0 {
-			return fiber.NewError(fiber.StatusNotFound, "task not found or not updated")
+			return fiber.NewError(fiber.StatusNotFound, "task not found")
 		}
 
-		// Update assignees
+		// Update assignees (delete and re-insert)
 		if req.Assignees != nil {
 			_, err := database.DB.ExecContext(ctx,
 				`DELETE FROM task_assignees WHERE task_id = $1`, *req.ID)
 			if err != nil {
 				return fiber.NewError(fiber.StatusInternalServerError, "failed to clear assignees: "+err.Error())
 			}
+
 			for _, uid := range req.Assignees {
 				_, err := database.DB.ExecContext(ctx,
 					`INSERT INTO task_assignees (task_id, user_id) VALUES ($1, $2)`, *req.ID, uid)
@@ -544,15 +599,14 @@ func AdminAddOrEditTask(c *fiber.Ctx) error {
 		}
 
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{"message": "task updated successfully"})
+
 	} else {
-		// Add new task
+		// Add new task - MUST include creator_id
 		var newTaskID int
 		err := database.DB.QueryRowContext(ctx,
-			`
-			INSERT INTO tasks (project_id, title, description, status, due_date, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) RETURNING id
-			`,
-			req.ProjectID, req.Title, req.Description, req.Status, dueDatePtr).Scan(&newTaskID)
+			`INSERT INTO tasks (project_id, creator_id, title, description, status, due_date, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW()) RETURNING id`,
+			req.ProjectID, adminUserID, req.Title, req.Description, req.Status, dueDatePtr).Scan(&newTaskID)
 		if err != nil {
 			return fiber.NewError(fiber.StatusInternalServerError, "failed to create task: "+err.Error())
 		}
@@ -566,7 +620,10 @@ func AdminAddOrEditTask(c *fiber.Ctx) error {
 			}
 		}
 
-		return c.Status(fiber.StatusCreated).JSON(fiber.Map{"message": "task created successfully"})
+		return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+			"message": "task created successfully",
+			"task_id": newTaskID,
+		})
 	}
 }
 

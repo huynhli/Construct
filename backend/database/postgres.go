@@ -45,14 +45,6 @@ func ConnectPostgres() {
 	}
 
 	log.Println("Connected to Postgres successfully")
-
-	// mongoDBConfig := options.Client().ApplyURI(uri)
-	// var err error
-	// Client, err = mongo.Connect(ctx, mongoDBConfig)
-	// if err != nil {
-	// 	log.Fatalf("Error connecting to MongoDB: %s", err)
-	// }
-	// ConstructDatabase = Client.Database("Prototype")
 }
 
 func DisconnectPostgres() {
@@ -61,8 +53,4 @@ func DisconnectPostgres() {
 		log.Fatal(err)
 	}
 	log.Println("Postgres connection closed")
-	// err := Client.Disconnect(context.TODO())
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
 }
