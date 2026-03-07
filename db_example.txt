@@ -1,14 +1,9 @@
 ```
 {
     "company1": {
-        "admins"[]: {
-            _id:      id
-            name:     string
-            email:    string
-            password: string
-        }
         "users"[]: {
             _id:      id
+            admin:    bool
             name:     string
             email:    string
             password: string
