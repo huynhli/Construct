@@ -9,6 +9,9 @@ services:
       - ./backend/.env
     environment:
       - DOCKER=true
+    networks:
+      - app-network
+    restart: unless-stopped
 
   # db:
     # image: postgres:latest
@@ -18,7 +21,22 @@ services:
     # volumes:
     #   - postgres_data:/var/lub/postgresql/data
 
-  # frontend:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"       # http://localhost  → nginx → React SPA
+    depends_on:
+      - backend
+
+    networks:
+      - app-network
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge
 
 # volume = folder for multi-container sharing
 # volumes:

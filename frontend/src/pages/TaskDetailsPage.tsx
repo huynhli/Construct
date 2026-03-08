@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import apiClient from '../api/apiClient';
 
 interface AssignedUser {
