@@ -1,4 +1,4 @@
-# looks for dockerfile in build, maps port on machine to port in container
+# looks for dockerfile in build, maps port on machine : to port in container
 services:
   # name of container = backend
   backend:
@@ -21,18 +21,38 @@ services:
     # volumes:
     #   - postgres_data:/var/lub/postgresql/data
 
-  frontend:
+  frontend-dev:
+    profiles: ["dev"]
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: dev
     ports:
-      - "80:80"       # http://localhost  → nginx → React SPA
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true
     depends_on:
       - backend
+    networks:
+      - app-network
 
+  frontend-prod:
+    profiles: ["prod"]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: prod
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
     networks:
       - app-network
     restart: unless-stopped
+
 
 networks:
   app-network:
