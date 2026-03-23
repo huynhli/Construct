@@ -1,8 +1,10 @@
-const BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const BASE_URL = import.meta.env.MODE === 'development'
+  ? import.meta.env.VITE_API_BASE_URL_LOCAL
+  : import.meta.env.VITE_API_BASE_URL_DOCKER_COMPOSE;
 
 async function fetchWithAuth(endpoint: string, options: RequestInit = {}) {
+    // verify auth token
     const token = localStorage.getItem('authToken');
-
     const headers: HeadersInit = {
         'Content-Type': 'application/json',
         ...(options.headers as Record<string, string>),
@@ -39,5 +41,4 @@ const apiClient = {
     put: (endpoint: string, body: any) => fetchWithAuth(endpoint, { method: 'PUT', body: JSON.stringify(body) }),
     delete: (endpoint: string) => fetchWithAuth(endpoint, { method: 'DELETE' }),
 };
-
 export default apiClient;
